@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shruti — sing it back</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F141B; --panel:#161D27; --panel2:#121822; --edge:#26303E;
+  --ink:#EAEFF5; --mut:#8492A6; --ref:#F5A94B; --you:#59D8D2;
+  --good:#74D690; --bad:#F2655C; --warn:#E8C268;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0; padding:0; background:var(--bg); color:var(--ink);
+  font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.5}
+.wrap{max-width:580px; margin:0 auto; padding:20px 16px 80px}
+header{padding:18px 0 8px}
+.wordmark{font-family:'Bricolage Grotesque',sans-serif; font-weight:800; font-size:34px;
+  letter-spacing:-0.5px; line-height:1}
+.wordmark .dot{color:var(--ref)}
+.tag{color:var(--mut); font-size:12px; margin-top:6px}
+.tag b.r{color:var(--ref); font-weight:600}.tag b.y{color:var(--you); font-weight:600}
+
+.step{background:var(--panel); border:1px solid var(--edge); border-radius:14px;
+  margin-top:14px; overflow:hidden; transition:opacity .25s}
+.step.locked{opacity:.42; pointer-events:none}
+.step-head{display:flex; align-items:center; gap:10px; padding:14px 16px;
+  border-bottom:1px solid transparent}
+.step.open .step-head{border-bottom-color:var(--edge)}
+.snum{width:24px; height:24px; border-radius:50%; border:1.5px solid var(--mut);
+  color:var(--mut); display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:600; flex:none}
+.step.done .snum{border-color:var(--good); color:var(--good)}
+.step.open .snum{border-color:var(--ref); color:var(--ref)}
+.stitle{font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:16px}
+.ssub{margin-left:auto; font-size:11px; color:var(--mut)}
+.step-body{padding:16px; display:none}
+.step.open .step-body{display:block}
+
+label{display:block; font-size:11px; color:var(--mut); text-transform:uppercase;
+  letter-spacing:.08em; margin:14px 0 6px}
+label:first-child{margin-top:0}
+input[type=text]{width:100%; background:var(--panel2); border:1px solid var(--edge);
+  border-radius:8px; color:var(--ink); font-family:inherit; font-size:14px;
+  padding:11px 12px; outline:none}
+input[type=text]:focus{border-color:var(--ref)}
+.row{display:flex; gap:8px; align-items:center}
+.row input{flex:1}
+button{font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:15px;
+  border:none; border-radius:10px; padding:12px 18px; cursor:pointer;
+  background:var(--edge); color:var(--ink)}
+button.primary{background:var(--ref); color:#1A1208}
+button.you{background:var(--you); color:#06201F}
+button.ghost{background:transparent; border:1px solid var(--edge); color:var(--mut);
+  font-size:13px; padding:9px 14px}
+button:disabled{opacity:.45; cursor:default}
+button.tiny{font-size:12px; padding:9px 12px; flex:none}
+.btnrow{display:flex; gap:10px; margin-top:16px; flex-wrap:wrap}
+.btnrow button{flex:1; min-width:130px}
+
+.tabs{display:flex; gap:6px; background:var(--panel2); border-radius:10px; padding:4px; margin-bottom:14px}
+.tabs button{flex:1; background:transparent; color:var(--mut); font-size:13px; padding:9px}
+.tabs button.on{background:var(--edge); color:var(--ink)}
+
+#ytmount{position:relative; width:100%; aspect-ratio:16/9; background:#000;
+  border-radius:10px; overflow:hidden; margin-top:6px; display:none}
+#ytmount iframe{position:absolute; inset:0; width:100%; height:100%}
+
+.note-msg{font-size:12px; color:var(--mut); margin-top:10px; line-height:1.55}
+.note-msg.err{color:var(--bad)}
+.note-msg.ok{color:var(--good)}
+.note-msg.w{color:var(--warn)}
+
+.livewrap{margin-top:14px}
+canvas.live{width:100%; height:90px; background:var(--panel2);
+  border:1px solid var(--edge); border-radius:10px; display:block}
+.meter{height:6px; background:var(--panel2); border-radius:3px; margin-top:8px; overflow:hidden}
+.meter i{display:block; height:100%; width:0%; background:var(--good); transition:width .08s}
+.capstat{display:flex; justify-content:space-between; font-size:12px; color:var(--mut); margin-top:8px}
+.capstat .rec{color:var(--bad); font-weight:600}
+
+.toggle{display:flex; align-items:center; gap:10px; margin-top:14px; font-size:12.5px; color:var(--mut)}
+.toggle input{width:18px; height:18px; accent-color:var(--you)}
+
+#scorewrap{text-align:center; padding:6px 0 2px}
+#scoreNum{font-family:'Bricolage Grotesque',sans-serif; font-weight:800; font-size:64px; line-height:1}
+#scoreLbl{font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.12em}
+canvas.roll{width:100%; height:300px; background:var(--panel2);
+  border:1px solid var(--edge); border-radius:10px; display:block; margin-top:14px; touch-action:pan-y}
+.legend{display:flex; gap:18px; justify-content:center; font-size:11.5px; color:var(--mut); margin-top:8px}
+.legend i{display:inline-block; width:16px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px}
+
+.notes{margin-top:14px; display:flex; flex-direction:column; gap:8px}
+.ncard{display:flex; align-items:center; gap:12px; background:var(--panel2);
+  border:1px solid var(--edge); border-radius:10px; padding:10px 12px; font-size:13px}
+.ncard .pitch{font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:17px; width:46px; flex:none}
+.ncard .v{font-weight:600}
+.ncard .d{margin-left:auto; text-align:right; color:var(--mut); font-size:11.5px; line-height:1.45; flex:none}
+.v.good{color:var(--good)}.v.bad{color:var(--bad)}.v.warn{color:var(--warn)}.v.miss{color:var(--mut)}
+.tips{margin-top:16px; background:var(--panel2); border:1px solid var(--edge);
+  border-radius:10px; padding:14px 16px; font-size:12.5px; line-height:1.7; color:var(--mut)}
+.tips b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="wordmark">shruti<span class="dot">.</span></div>
+  <div class="tag">clip it · <b class="r">hear it</b> · <b class="y">sing it back</b> · see the gap</div>
+</header>
+
+<!-- STEP 1 — SOURCE -->
+<section class="step open" id="step1">
+  <div class="step-head"><div class="snum">1</div><div class="stitle">Pick the clip</div><div class="ssub" id="s1sub"></div></div>
+  <div class="step-body">
+    <div class="tabs">
+      <button id="tabYT" class="on">YouTube</button>
+      <button id="tabFile">Audio file</button>
+    </div>
+    <div id="paneYT">
+      <label>YouTube link</label>
+      <div class="row">
+        <input type="text" id="ytUrl" placeholder="https://youtu.be/…" inputmode="url">
+        <button class="tiny" id="ytLoad">Load</button>
+      </div>
+      <div id="ytmount"><div id="ytplayer"></div></div>
+    </div>
+    <div id="paneFile" style="display:none">
+      <label>Audio file (mp3 / wav / m4a)</label>
+      <input type="file" id="fileInput" accept="audio/*">
+      <div class="note-msg">A clean file (isolated vocal or vocal-forward track) gives the most accurate reference — no speaker-to-mic hop needed.</div>
+      <audio id="fileAudio" style="display:none"></audio>
+    </div>
+    <label>Clip start / end <span style="text-transform:none">(secs or m:ss)</span></label>
+    <div class="row">
+      <input type="text" id="clipStart" placeholder="0:42" inputmode="numeric">
+      <button class="tiny" id="setStart">⟵ now</button>
+      <input type="text" id="clipEnd" placeholder="1:02" inputmode="numeric">
+      <button class="tiny" id="setEnd">⟵ now</button>
+    </div>
+    <div class="note-msg">Keep it 5–30 seconds. Pick a vocal-forward passage — a dense mix will confuse the pitch tracker.</div>
+    <div class="btnrow">
+      <button class="ghost" id="previewBtn" disabled>▶ Preview clip</button>
+      <button class="primary" id="confirmClip" disabled>Use this clip →</button>
+    </div>
+    <div class="note-msg" id="s1msg"></div>
+  </div>
+</section>
+
+<!-- STEP 2 — REFERENCE -->
+<section class="step locked" id="step2">
+  <div class="step-head"><div class="snum">2</div><div class="stitle">Capture the reference</div><div class="ssub" id="s2sub"></div></div>
+  <div class="step-body">
+    <div class="note-msg" id="refHowTo">Turn your volume <b style="color:var(--ink)">up</b>. The clip will play out loud and the mic listens to it. Keep the room quiet and don't sing along yet.</div>
+    <div class="btnrow"><button class="primary" id="refBtn">● Capture reference</button></div>
+    <div class="livewrap">
+      <canvas class="live" id="refLive"></canvas>
+      <div class="meter"><i id="refMeter"></i></div>
+      <div class="capstat"><span id="refStat"></span><span id="refTime"></span></div>
+    </div>
+    <div class="note-msg" id="s2msg"></div>
+  </div>
+</section>
+
+<!-- STEP 3 — YOUR TAKE -->
+<section class="step locked" id="step3">
+  <div class="step-head"><div class="snum">3</div><div class="stitle">Sing your take</div><div class="ssub" id="s3sub"></div></div>
+  <div class="step-body">
+    <div class="note-msg">The clip plays <b style="color:var(--ink)">muted</b> as your visual cue — sing over it. Octave doesn't matter; sing where your voice is comfortable.</div>
+    <div class="toggle">
+      <input type="checkbox" id="monitorTgl">
+      <span>Play clip audio while I sing — <b style="color:var(--warn)">wired headphones only</b>, or it bleeds into the mic and wrecks the analysis</span>
+    </div>
+    <div class="btnrow"><button class="you" id="takeBtn">● Record my take</button></div>
+    <div class="livewrap">
+      <canvas class="live" id="takeLive"></canvas>
+      <div class="meter"><i id="takeMeter"></i></div>
+      <div class="capstat"><span id="takeStat"></span><span id="takeTime"></span></div>
+    </div>
+    <div class="note-msg" id="s3msg"></div>
+  </div>
+</section>
+
+<!-- STEP 4 — RESULTS -->
+<section class="step locked" id="step4">
+  <div class="step-head"><div class="snum">4</div><div class="stitle">The gap</div><div class="ssub" id="s4sub"></div></div>
+  <div class="step-body">
+    <div id="scorewrap"><div id="scoreNum">—</div><div id="scoreLbl">pitch score</div></div>
+    <canvas class="roll" id="roll"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--ref)"></i>reference</span>
+      <span><i style="background:var(--you)"></i>your voice</span>
+      <span><i style="background:var(--bad)"></i>off &gt; 30¢</span>
+    </div>
+    <div class="notes" id="noteList"></div>
+    <div class="tips" id="tipsBox"></div>
+    <div class="btnrow">
+      <button class="you" id="retryBtn">↺ Sing again</button>
+      <button class="ghost" id="restartBtn">New clip</button>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+/* ================= TESTED DSP CORE (22/22 unit tests) ================= */
+function yinPitch(buf, sampleRate, opts = {}) {
+  const threshold = opts.threshold ?? 0.12;
+  const minHz = opts.minHz ?? 65, maxHz = opts.maxHz ?? 1100;
+  const rmsGate = opts.rmsGate ?? 0.006;
+  const n = buf.length;
+  let rms = 0;
+  for (let i = 0; i < n; i++) rms += buf[i]*buf[i];
+  rms = Math.sqrt(rms / n);
+  if (rms < rmsGate) return null;
+  const tauMin = Math.max(2, Math.floor(sampleRate/maxHz));
+  const tauMax = Math.min(Math.floor(sampleRate/minHz), n >> 1);
+  if (tauMax <= tauMin) return null;
+  const d = new Float32Array(tauMax+1);
+  const lim = n - tauMax;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let sum = 0;
+    for (let i = 0; i < lim; i++) { const df = buf[i]-buf[i+tau]; sum += df*df; }
+    d[tau] = sum;
+  }
+  const cmndf = new Float32Array(tauMax+1); cmndf[0] = 1;
+  let running = 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    running += d[tau];
+    cmndf[tau] = running === 0 ? 1 : (d[tau]*tau)/running;
+  }
+  let tau = -1;
+  for (let t = tauMin; t <= tauMax; t++) {
+    if (cmndf[t] < threshold) {
+      while (t+1 <= tauMax && cmndf[t+1] < cmndf[t]) t++;
+      tau = t; break;
+    }
+  }
+  if (tau === -1) {
+    let best = tauMin, bestV = cmndf[tauMin];
+    for (let t = tauMin+1; t <= tauMax; t++) if (cmndf[t] < bestV) { bestV = cmndf[t]; best = t; }
+    if (bestV > 0.35) return null;
+    tau = best;
+  }
+  let betterTau = tau;
+  if (tau > tauMin && tau < tauMax) {
+    const s0 = cmndf[tau-1], s1 = cmndf[tau], s2 = cmndf[tau+1];
+    const den = 2*(2*s1 - s2 - s0);
+    if (Math.abs(den) > 1e-12) betterTau = tau + (s2-s0)/den;
+  }
+  const f0 = sampleRate/betterTau;
+  return (f0 < minHz || f0 > maxHz) ? null : f0;
+}
+const C0 = 16.3515978313;
+const hzToCents = hz => 1200*Math.log2(hz/C0);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function centsToName(c){ const s = Math.round(c/100); return NOTE_NAMES[((s%12)+12)%12] + Math.floor(s/12); }
+function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const m=s.length>>1;
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2; }
+function medianFilterContour(frames, k=5){
+  const half = k>>1;
+  return frames.map((f,i)=>{
+    if (f.cents == null) return {...f};
+    const w=[];
+    for (let j=Math.max(0,i-half); j<=Math.min(frames.length-1,i+half); j++)
+      if (frames[j].cents != null) w.push(frames[j].cents);
+    w.sort((a,b)=>a-b);
+    return {...f, cents: w[w.length>>1]};
+  });
+}
+function segmentNotes(frames, opts={}){
+  const jump = opts.jump ?? 80, minDur = opts.minDur ?? 0.14, maxGap = opts.maxGap ?? 0.09;
+  const notes=[]; let cur=null;
+  const flush=()=>{ if(!cur) return;
+    if (cur.t1-cur.t0 >= minDur && cur.vals.length >= 3){
+      const c = median(cur.vals);
+      notes.push({t0:cur.t0, t1:cur.t1, cents:c, name:centsToName(c)});
+    } cur=null; };
+  for (const f of frames){
+    if (f.cents == null){ if (cur && f.t-cur.lastVoicedT > maxGap) flush(); continue; }
+    if (!cur){ cur={t0:f.t,t1:f.t,vals:[f.cents],lastVoicedT:f.t}; continue; }
+    const ref = median(cur.vals.slice(-12));
+    if (Math.abs(f.cents-ref) > jump){ flush(); cur={t0:f.t,t1:f.t,vals:[f.cents],lastVoicedT:f.t}; }
+    else { cur.vals.push(f.cents); cur.t1=f.t; cur.lastVoicedT=f.t; }
+  }
+  flush(); return notes;
+}
+function octaveShift(refFrames, userFrames){
+  const diffs=[]; let ui=0;
+  for (const rf of refFrames){
+    if (rf.cents == null) continue;
+    while (ui < userFrames.length-1 && userFrames[ui+1].t <= rf.t) ui++;
+    const uf = userFrames[ui];
+    if (uf && uf.cents != null && Math.abs(uf.t-rf.t) < 0.08) diffs.push(uf.cents-rf.cents);
+  }
+  if (diffs.length < 8) return 0;
+  return Math.round(median(diffs)/1200)*1200;
+}
+function dtwAlign(a, b){
+  const n=a.length, m=b.length;
+  if (!n || !m) return {path:[], cost:Infinity};
+  const D = new Float64Array((n+1)*(m+1)).fill(Infinity);
+  const idx = (i,j)=>i*(m+1)+j;
+  D[idx(0,0)]=0;
+  const cost = (ca,cb)=>{ if (ca==null&&cb==null) return 0; if (ca==null||cb==null) return 150;
+    return Math.min(Math.abs(ca-cb),600); };
+  for (let i=1;i<=n;i++) for (let j=1;j<=m;j++){
+    D[idx(i,j)] = cost(a[i-1],b[j-1]) + Math.min(D[idx(i-1,j-1)],D[idx(i-1,j)],D[idx(i,j-1)]);
+  }
+  const path=[]; let i=n,j=m;
+  while (i>0 && j>0){
+    path.push([i-1,j-1]);
+    const dg=D[idx(i-1,j-1)], up=D[idx(i-1,j)], lf=D[idx(i,j-1)];
+    if (dg<=up && dg<=lf){i--;j--;} else if (up<=lf) i--; else j--;
+  }
+  path.reverse(); return {path, cost:D[idx(n,m)]};
+}
+function scoreNotes(refNotes, refFrames, userFrames, dtwPath){
+  const map = new Map();
+  for (const [ri,ui] of dtwPath){ if(!map.has(ri)) map.set(ri,[]); map.get(ri).push(ui); }
+  const results=[];
+  for (const note of refNotes){
+    const rIdx=[];
+    for (let i=0;i<refFrames.length;i++)
+      if (refFrames[i].t>=note.t0 && refFrames[i].t<=note.t1) rIdx.push(i);
+    const userCents=[];
+    for (const ri of rIdx) for (const ui of (map.get(ri)||[])){
+      const c = userFrames[ui]?.cents; if (c != null) userCents.push(c);
+    }
+    const coverage = rIdx.length ? userCents.length/rIdx.length : 0;
+    let userOnset = null;
+    for (const uf of userFrames){
+      if (uf.t >= note.t0-0.4 && uf.t <= note.t1 && uf.cents != null
+          && Math.abs(uf.cents-note.cents) < 250){ userOnset = uf.t; break; }
+    }
+    if (coverage < 0.25 || userCents.length < 3){
+      results.push({note, verdict:'missed', dev:null, timing:null, score:0}); continue;
+    }
+    const dev = median(userCents) - note.cents;
+    const timing = userOnset != null ? userOnset - note.t0 : null;
+    const absDev = Math.abs(dev);
+    let verdict;
+    if (absDev <= 30) verdict = 'in tune';
+    else if (dev > 0) verdict = absDev <= 70 ? 'slightly sharp' : 'sharp';
+    else verdict = absDev <= 70 ? 'slightly flat' : 'flat';
+    let score = absDev <= 20 ? 100 : Math.max(0, 100*(1-(absDev-20)/100));
+    if (timing != null && Math.abs(timing) > 0.12) score *= 0.9;
+    results.push({note, verdict, dev, timing, score});
+  }
+  const overall = results.length ? Math.round(results.reduce((s,r)=>s+r.score,0)/results.length) : 0;
+  return {results, overall, sungCount: results.filter(r=>r.verdict!=='missed').length, total: results.length};
+}
+
+/* ================= APP ================= */
+const $ = id => document.getElementById(id);
+const state = {
+  srcKind: 'yt',            // 'yt' | 'file'
+  ytReady: false, player: null, playerReady: false,
+  fileLoaded: false, fileBuffer: null,
+  clipStart: 0, clipEnd: 0,
+  refFrames: null, refNotes: null,
+  userFrames: null,
+  audioCtx: null, analyser: null, micStream: null,
+  capturing: false,
+};
+
+/* ---- step control ---- */
+function openStep(n){
+  for (let i=1;i<=4;i++){
+    const el = $('step'+i);
+    el.classList.toggle('open', i===n);
+    if (i<=n) el.classList.remove('locked');
+  }
+  $('step'+n).scrollIntoView({behavior:'smooth', block:'start'});
+}
+function markDone(n, sub){ $('step'+n).classList.add('done'); if (sub) $('s'+n+'sub').textContent = sub; }
+
+/* ---- time parsing ---- */
+function parseTime(s){
+  s = (s||'').trim(); if (!s) return null;
+  if (s.includes(':')){ const p = s.split(':').map(Number);
+    if (p.some(isNaN)) return null; return p.length===2 ? p[0]*60+p[1] : null; }
+  const v = Number(s); return isNaN(v) ? null : v;
+}
+function fmt(t){ const m = Math.floor(t/60), s = (t%60); return m + ':' + (s<10?'0':'') + s.toFixed(s%1?1:0).padStart(s%1?4:2,'0'); }
+
+/* ---- source abstraction ---- */
+const source = {
+  ready(){ return state.srcKind==='yt' ? state.playerReady : state.fileLoaded; },
+  duration(){ return state.srcKind==='yt' ? (state.player?.getDuration()||0) : ($('fileAudio').duration||0); },
+  time(){ return state.srcKind==='yt' ? state.player.getCurrentTime() : $('fileAudio').currentTime; },
+  mute(m){ if (state.srcKind==='yt'){ m ? state.player.mute() : state.player.unMute(); }
+           else $('fileAudio').muted = m; },
+  play(from){ if (state.srcKind==='yt'){ state.player.seekTo(from, true); state.player.playVideo(); }
+              else { const a=$('fileAudio'); a.currentTime=from; a.play(); } },
+  stop(){ if (state.srcKind==='yt') state.player.pauseVideo(); else $('fileAudio').pause(); },
+};
+
+/* ---- tabs ---- */
+$('tabYT').onclick = ()=>{ state.srcKind='yt'; $('tabYT').classList.add('on'); $('tabFile').classList.remove('on');
+  $('paneYT').style.display='block'; $('paneFile').style.display='none'; refreshClipButtons(); };
+$('tabFile').onclick = ()=>{ state.srcKind='file'; $('tabFile').classList.add('on'); $('tabYT').classList.remove('on');
+  $('paneYT').style.display='none'; $('paneFile').style.display='block'; refreshClipButtons(); };
+
+/* ---- YouTube ---- */
+function parseYTId(url){
+  const m = url.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/) || url.match(/^([\w-]{11})$/);
+  return m ? m[1] : null;
+}
+let ytApiLoading = false;
+function ensureYTApi(cb){
+  if (window.YT && window.YT.Player) return cb();
+  if (!ytApiLoading){
+    ytApiLoading = true;
+    const s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s);
+  }
+  window.onYouTubeIframeAPIReady = cb;
+}
+$('ytLoad').onclick = ()=>{
+  const id = parseYTId($('ytUrl').value);
+  if (!id){ setMsg('s1msg','That doesn\u2019t look like a YouTube link.','err'); return; }
+  setMsg('s1msg','Loading player…');
+  $('ytmount').style.display='block';
+  ensureYTApi(()=>{
+    if (state.player) { state.player.loadVideoById(id); state.player.pauseVideo(); return; }
+    state.player = new YT.Player('ytplayer', {
+      videoId: id,
+      playerVars: { playsinline:1, rel:0, controls:1, modestbranding:1 },
+      events: {
+        onReady: ()=>{ state.playerReady = true; setMsg('s1msg','Loaded. Scrub to find your passage, then set start/end.','ok'); refreshClipButtons(); },
+        onError: (e)=>{ setMsg('s1msg','This video can\u2019t be embedded (owner disabled it). Try another video or use a file.','err'); },
+        onStateChange: ()=>{}
+      }
+    });
+  });
+};
+
+/* ---- file ---- */
+$('fileInput').onchange = async (e)=>{
+  const f = e.target.files[0]; if (!f) return;
+  const url = URL.createObjectURL(f);
+  const a = $('fileAudio'); a.src = url;
+  a.onloadedmetadata = ()=>{ state.fileLoaded = true;
+    setMsg('s1msg', `Loaded ${f.name} (${fmt(a.duration)}). Set start/end.`, 'ok'); refreshClipButtons(); };
+  // decode for offline (clean) reference analysis
+  try{
+    const ctx = getCtx();
+    const arr = await f.arrayBuffer();
+    state.fileBuffer = await ctx.decodeAudioData(arr.slice(0));
+  }catch(err){ state.fileBuffer = null; /* fall back to mic capture */ }
+};
+
+/* ---- clip controls ---- */
+function refreshClipButtons(){
+  const ok = source.ready();
+  $('previewBtn').disabled = !ok; $('confirmClip').disabled = !ok;
+}
+$('setStart').onclick = ()=>{ if (source.ready()) $('clipStart').value = fmt(source.time()); };
+$('setEnd').onclick   = ()=>{ if (source.ready()) $('clipEnd').value = fmt(source.time()); };
+
+function readClip(){
+  const s = parseTime($('clipStart').value), e = parseTime($('clipEnd').value);
+  if (s == null || e == null){ setMsg('s1msg','Enter both start and end (e.g. 0:42 and 1:02).','err'); return null; }
+  if (e <= s){ setMsg('s1msg','End must be after start.','err'); return null; }
+  const len = e - s;
+  if (len > 60){ setMsg('s1msg','Clip is over 60s — too long to analyze well. Keep it under 30s.','err'); return null; }
+  if (len > 30) setMsg('s1msg','Over 30s — it\u2019ll work, but shorter clips give sharper feedback.','w');
+  return {s, e};
+}
+let previewTimer = null;
+$('previewBtn').onclick = ()=>{
+  const c = readClip(); if (!c) return;
+  source.mute(false); source.play(c.s);
+  clearInterval(previewTimer);
+  previewTimer = setInterval(()=>{ if (source.time() >= c.e){ source.stop(); clearInterval(previewTimer); } }, 100);
+};
+$('confirmClip').onclick = ()=>{
+  const c = readClip(); if (!c) return;
+  clearInterval(previewTimer); source.stop();
+  state.clipStart = c.s; state.clipEnd = c.e;
+  markDone(1, fmt(c.s) + ' → ' + fmt(c.e));
+  // offline analysis available?
+  if (state.srcKind === 'file' && state.fileBuffer){
+    $('refHowTo').innerHTML = 'Clean file detected — the reference will be analyzed <b style="color:var(--ink)">directly from the audio data</b>. No speaker capture needed.';
+    $('refBtn').textContent = '⚡ Analyze reference';
+  } else {
+    $('refHowTo').innerHTML = 'Turn your volume <b style="color:var(--ink)">up</b>. The clip will play out loud and the mic listens to it. Keep the room quiet and don\u2019t sing along yet.';
+    $('refBtn').textContent = '● Capture reference';
+  }
+  openStep(2);
+};
+
+/* ---- audio plumbing ---- */
+function getCtx(){
+  if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+  return state.audioCtx;
+}
+async function getMic(){
+  if (state.micStream) return state.micStream;
+  state.micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+  });
+  return state.micStream;
+}
+
+/* live strip drawing */
+function makeLiveDrawer(canvas){
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth*dpr; canvas.height = canvas.clientHeight*dpr;
+  ctx.scale(dpr,dpr);
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  return (frames, color, total)=>{
+    ctx.clearRect(0,0,W,H);
+    const voiced = frames.filter(f=>f.cents!=null);
+    if (!voiced.length) return;
+    let lo = Math.min(...voiced.map(f=>f.cents))-100, hi = Math.max(...voiced.map(f=>f.cents))+100;
+    if (hi-lo < 400){ const m=(hi+lo)/2; lo=m-200; hi=m+200; }
+    ctx.fillStyle = color;
+    for (const f of frames){
+      if (f.cents==null) continue;
+      const x = (f.t/total)*W, y = H - ((f.cents-lo)/(hi-lo))*H;
+      ctx.fillRect(x-1.2, y-1.2, 2.4, 2.4);
+    }
+  };
+}
+
+/* generic capture: plays clip, polls mic pitch on the source clock */
+async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl}){
+  const ctx = getCtx();
+  const stream = await getMic();
+  const srcNode = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  srcNode.connect(analyser);
+  const buf = new Float32Array(2048);
+  const draw = makeLiveDrawer(liveCanvas);
+  const total = state.clipEnd - state.clipStart;
+  const frames = [];
+
+  source.mute(muteSource);
+  source.play(state.clipStart);
+  statEl.innerHTML = '<span class="rec">● REC</span> waiting for playback…';
+
+  // wait until the source clock actually moves past clipStart
+  await new Promise((res, rej)=>{
+    const t0 = Date.now();
+    const w = setInterval(()=>{
+      if (source.time() >= state.clipStart && source.time() < state.clipEnd){ clearInterval(w); res(); }
+      if (Date.now()-t0 > 8000){ clearInterval(w); rej(new Error('Playback didn\u2019t start — tap play on the video once, then retry.')); }
+    }, 60);
+  });
+
+  statEl.innerHTML = '<span class="rec">● REC</span> capturing';
+  state.capturing = true;
+  await new Promise(res=>{
+    const tick = setInterval(()=>{
+      const t = source.time() - state.clipStart;
+      if (source.time() >= state.clipEnd || !state.capturing){
+        clearInterval(tick); res(); return;
+      }
+      analyser.getFloatTimeDomainData(buf);
+      let rms=0; for (let i=0;i<buf.length;i++) rms+=buf[i]*buf[i];
+      rms = Math.sqrt(rms/buf.length);
+      meterEl.style.width = Math.min(100, rms*900) + '%';
+      const f0 = yinPitch(buf, ctx.sampleRate);
+      frames.push({ t:+t.toFixed(3), cents: f0 ? hzToCents(f0) : null });
+      timeEl.textContent = fmt(t) + ' / ' + fmt(total);
+      if (frames.length % 3 === 0) draw(frames, '#9aa7bb', total);
+    }, 45);
+  });
+  state.capturing = false;
+  source.stop(); source.mute(false);
+  meterEl.style.width = '0%';
+  srcNode.disconnect();
+  return medianFilterContour(frames, 5);
+}
+
+/* offline analysis of decoded file buffer (clean path) */
+function analyzeBufferOffline(){
+  const ab = state.fileBuffer;
+  const sr = ab.sampleRate;
+  const ch0 = ab.getChannelData(0);
+  const ch1 = ab.numberOfChannels > 1 ? ab.getChannelData(1) : null;
+  const i0 = Math.floor(state.clipStart*sr), i1 = Math.min(ch0.length, Math.floor(state.clipEnd*sr));
+  const frames = [];
+  const N = 2048, hop = Math.round(sr*0.045);
+  const win = new Float32Array(N);
+  for (let i = i0; i + N <= i1; i += hop){
+    for (let k=0;k<N;k++) win[k] = ch1 ? (ch0[i+k]+ch1[i+k])*0.5 : ch0[i+k];
+    const f0 = yinPitch(win, sr);
+    frames.push({ t:+(((i - i0))/sr).toFixed(3), cents: f0 ? hzToCents(f0) : null });
+  }
+  return medianFilterContour(frames, 5);
+}
+
+/* ---- step 2: reference ---- */
+$('refBtn').onclick = async ()=>{
+  $('refBtn').disabled = true; setMsg('s2msg','');
+  try{
+    getCtx(); // resume inside user gesture (iOS)
+    let frames;
+    if (state.srcKind==='file' && state.fileBuffer){
+      $('refStat').textContent = 'analyzing file…';
+      await new Promise(r=>setTimeout(r,30)); // let UI paint
+      frames = analyzeBufferOffline();
+      makeLiveDrawer($('refLive'))(frames, '#9aa7bb', state.clipEnd-state.clipStart);
+      $('refStat').textContent = '';
+    } else {
+      await getMic();
+      frames = await captureContour({muteSource:false, liveCanvas:$('refLive'),
+        meterEl:$('refMeter'), statEl:$('refStat'), timeEl:$('refTime')});
+      $('refStat').textContent = '';
+    }
+    const voiced = frames.filter(f=>f.cents!=null).length;
+    const notes = segmentNotes(frames);
+    if (voiced < 20 || notes.length === 0){
+      setMsg('s2msg','Couldn\u2019t track a melody — too quiet or the mix is too dense. Turn the volume up, or pick a more vocal-forward passage.','err');
+      $('refBtn').disabled = false; return;
+    }
+    state.refFrames = frames; state.refNotes = notes;
+    setMsg('s2msg',`Reference locked — ${notes.length} notes detected (${notes[0].name} … ${notes[notes.length-1].name}).`,'ok');
+    markDone(2, notes.length + ' notes');
+    openStep(3);
+  }catch(err){
+    setMsg('s2msg', err.name==='NotAllowedError'
+      ? 'Mic permission denied. Allow microphone access in your browser settings and reload.'
+      : 'Capture failed: ' + err.message, 'err');
+  }
+  $('refBtn').disabled = false;
+};
+
+/* ---- step 3: take ---- */
+$('takeBtn').onclick = async ()=>{
+  $('takeBtn').disabled = true; setMsg('s3msg','');
+  try{
+    getCtx();
+    await getMic();
+    const monitor = $('monitorTgl').checked;
+    const frames = await captureContour({muteSource:!monitor, liveCanvas:$('takeLive'),
+      meterEl:$('takeMeter'), statEl:$('takeStat'), timeEl:$('takeTime')});
+    $('takeStat').textContent='';
+    const voiced = frames.filter(f=>f.cents!=null).length;
+    if (voiced < 10){
+      setMsg('s3msg','Barely heard you — sing louder or move closer to the mic.','err');
+      $('takeBtn').disabled = false; return;
+    }
+    state.userFrames = frames;
+    markDone(3, 'recorded');
+    renderResults();
+    openStep(4);
+  }catch(err){
+    setMsg('s3msg','Recording failed: ' + err.message, 'err');
+  }
+  $('takeBtn').disabled = false;
+};
+
+/* ---- step 4: results ---- */
+function renderResults(){
+  const shift = octaveShift(state.refFrames, state.userFrames);
+  const user = state.userFrames.map(f=>({...f, cents: f.cents==null?null:f.cents-shift}));
+  const {path} = dtwAlign(state.refFrames.map(f=>f.cents), user.map(f=>f.cents));
+  const report = scoreNotes(state.refNotes, state.refFrames, user, path);
+
+  $('scoreNum').textContent = report.overall;
+  $('scoreNum').style.color = report.overall>=80 ? 'var(--good)' : report.overall>=55 ? 'var(--warn)' : 'var(--bad)';
+  $('s4sub').textContent = report.sungCount + '/' + report.total + ' notes';
+
+  drawRoll(state.refFrames, state.refNotes, user, report);
+
+  // note cards
+  const list = $('noteList'); list.innerHTML='';
+  report.results.forEach((r,i)=>{
+    const cls = r.verdict==='in tune' ? 'good' : r.verdict==='missed' ? 'miss'
+      : r.verdict.startsWith('slightly') ? 'warn' : 'bad';
+    const devTxt = r.dev==null ? '' : (r.dev>0?'+':'') + Math.round(r.dev) + '¢';
+    const timTxt = r.timing==null ? '' :
+      Math.abs(r.timing)<=0.12 ? 'on time' : (r.timing>0 ? Math.round(r.timing*1000)+'ms late' : Math.round(-r.timing*1000)+'ms early');
+    const card = document.createElement('div');
+    card.className = 'ncard';
+    card.innerHTML = `<div class="pitch" style="color:var(--ref)">${r.note.name}</div>
+      <div><span class="v ${cls}">${r.verdict}</span><br>
+      <span style="color:var(--mut);font-size:11px">${fmt(r.note.t0)}–${fmt(r.note.t1)}</span></div>
+      <div class="d">${devTxt}${devTxt&&timTxt?'<br>':''}${timTxt}</div>`;
+    list.appendChild(card);
+  });
+
+  // coaching tips
+  const rs = report.results;
+  const flat = rs.filter(r=>/flat/.test(r.verdict)).length;
+  const sharp = rs.filter(r=>/sharp/.test(r.verdict)).length;
+  const late = rs.filter(r=>r.timing!=null && r.timing>0.12).length;
+  const early = rs.filter(r=>r.timing!=null && r.timing<-0.12).length;
+  const missed = rs.filter(r=>r.verdict==='missed').length;
+  const tips = [];
+  if (report.overall>=85) tips.push('<b>Strong take.</b> The contour tracks the reference closely.');
+  if (flat>sharp && flat>=2) tips.push(`<b>You trend flat</b> (${flat} notes) — classic under-supported breath. More air, lift the soft palate, aim slightly above the note.`);
+  if (sharp>flat && sharp>=2) tips.push(`<b>You trend sharp</b> (${sharp} notes) — usually tension. Relax the jaw and throat, ease off the push.`);
+  if (late>=2) tips.push(`<b>Entries are late</b> (${late} notes) — you\u2019re reacting to the note instead of anticipating it. Breathe one beat before each phrase.`);
+  if (early>=2) tips.push(`<b>You rush entries</b> (${early} notes) — sit back on the beat.`);
+  if (missed>=1) tips.push(`<b>${missed} note${missed>1?'s':''} missed</b> — listen to the reference passage again before retrying; sing it on \u201Cla\u201D first to lock the melody without lyrics.`);
+  if (!tips.length) tips.push('Mixed results — retry the same clip and watch the cyan line against the amber blocks in real time.');
+  $('tipsBox').innerHTML = tips.join('<br><br>');
+}
+
+function drawRoll(refFrames, refNotes, userFrames, report){
+  const cv = $('roll'), dpr = window.devicePixelRatio||1;
+  cv.width = cv.clientWidth*dpr; cv.height = cv.clientHeight*dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr,dpr);
+  const W = cv.clientWidth, H = cv.clientHeight, padL = 34, padR = 6, padT = 8, padB = 18;
+  ctx.clearRect(0,0,W,H);
+  const total = state.clipEnd - state.clipStart;
+
+  const allC = refNotes.map(n=>n.cents);
+  for (const f of userFrames) if (f.cents!=null) allC.push(f.cents);
+  let lo = Math.min(...allC)-150, hi = Math.max(...allC)+150;
+  lo = Math.floor(lo/100)*100; hi = Math.ceil(hi/100)*100;
+  const X = t => padL + (t/total)*(W-padL-padR);
+  const Y = c => padT + (1-(c-lo)/(hi-lo))*(H-padT-padB);
+
+  // semitone grid
+  const span = (hi-lo)/100;
+  const step = span > 22 ? 200 : 100;
+  ctx.font = '9px IBM Plex Mono'; ctx.fillStyle = '#5a6678';
+  for (let c = lo; c <= hi; c += step){
+    ctx.strokeStyle = (Math.round(c/100)%12===0) ? '#2e3a4b' : '#1d2530';
+    ctx.beginPath(); ctx.moveTo(padL, Y(c)); ctx.lineTo(W-padR, Y(c)); ctx.stroke();
+    ctx.fillText(centsToName(c), 4, Y(c)+3);
+  }
+  // time ticks
+  for (let t=0; t<=total; t+= total>20?5:2){
+    ctx.fillText(fmt(t), X(t)-8, H-5);
+  }
+  // reference note blocks (verdict-tinted edge)
+  report.results.forEach(r=>{
+    const n = r.note;
+    const x0 = X(n.t0), x1 = X(n.t1), y = Y(n.cents);
+    ctx.fillStyle = 'rgba(245,169,75,0.28)';
+    ctx.strokeStyle = r.verdict==='in tune' ? 'rgba(116,214,144,0.9)'
+      : r.verdict==='missed' ? 'rgba(132,146,166,0.6)' : 'rgba(242,101,92,0.9)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, x0, y-7, Math.max(4,x1-x0), 14, 4); ctx.fill(); ctx.stroke();
+  });
+  // reference contour (faint)
+  drawContour(ctx, refFrames, X, Y, 'rgba(245,169,75,0.55)', 1.4);
+  // user contour (bright, red where off)
+  drawContourScored(ctx, userFrames, refNotes, X, Y);
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function drawContour(ctx, frames, X, Y, color, lw){
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.beginPath();
+  let pen = false;
+  for (const f of frames){
+    if (f.cents==null){ pen=false; continue; }
+    const x=X(f.t), y=Y(f.cents);
+    if (!pen){ ctx.moveTo(x,y); pen=true; } else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+}
+function drawContourScored(ctx, frames, refNotes, X, Y){
+  for (let i=1;i<frames.length;i++){
+    const a=frames[i-1], b=frames[i];
+    if (a.cents==null || b.cents==null) continue;
+    // off-pitch if >30c from the active reference note
+    const n = refNotes.find(n=>b.t>=n.t0 && b.t<=n.t1);
+    const off = n && Math.abs(b.cents-n.cents)>30;
+    ctx.strokeStyle = off ? 'rgba(242,101,92,0.95)' : 'rgba(89,216,210,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(X(a.t),Y(a.cents)); ctx.lineTo(X(b.t),Y(b.cents)); ctx.stroke();
+  }
+}
+
+/* ---- retry / restart ---- */
+$('retryBtn').onclick = ()=>{ openStep(3); };
+$('restartBtn').onclick = ()=>{ location.reload(); };
+
+function setMsg(id, txt, cls){
+  const el = $(id); el.textContent = txt;
+  el.className = 'note-msg' + (cls ? ' '+cls : '');
+  if (cls==='ok') el.classList.add('ok');
+}
+</script>
+</body>
+</html>
