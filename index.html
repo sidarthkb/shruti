@@ -168,12 +168,24 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
 <section class="step locked" id="step3">
   <div class="step-head"><div class="snum">3</div><div class="stitle">Sing your take</div><div class="ssub" id="s3sub"></div></div>
   <div class="step-body">
+    <div class="tabs">
+      <button id="takeTabLive" class="on">Sing live</button>
+      <button id="takeTabFile">Upload a take</button>
+    </div>
+    <div id="takePaneLive">
     <div class="note-msg">The clip plays <b style="color:var(--ink)">muted</b> as your visual cue — sing over it. Octave doesn't matter; sing where your voice is comfortable.</div>
     <div class="toggle">
       <input type="checkbox" id="monitorTgl">
       <span>Play clip audio while I sing — <b style="color:var(--warn)">wired headphones only</b>, or it bleeds into the mic and wrecks the analysis</span>
     </div>
     <div class="btnrow"><button class="you" id="takeBtn">● Record my take</button></div>
+    </div>
+    <div id="takePaneFile" style="display:none">
+      <label>Your recorded take (mp3 / wav / m4a)</label>
+      <input type="file" id="takeFileInput" accept="audio/*">
+      <div class="note-msg">Leading silence is fine — the take is auto-aligned to the reference. Heads up: because the global offset is removed, early/late verdicts are <b style="color:var(--ink)">relative</b>, not absolute.</div>
+      <div class="btnrow"><button class="you" id="takeAnalyzeBtn" disabled>⚡ Analyze my take</button></div>
+    </div>
     <div class="livewrap">
       <canvas class="live" id="takeLive"></canvas>
       <div class="meter"><i id="takeMeter"></i></div>
@@ -297,6 +309,35 @@ function octaveShift(refFrames, userFrames){
   }
   if (diffs.length < 8) return 0;
   return Math.round(median(diffs)/1200)*1200;
+}
+function resampleUniform(frames, t0, t1, hop = 0.045){
+  const out = []; let i = 0;
+  for (let t = t0; t <= t1 + 1e-9; t += hop){
+    while (i < frames.length-1 && Math.abs(frames[i+1].t-t) <= Math.abs(frames[i].t-t)) i++;
+    const f = frames[i];
+    out.push((f && f.cents != null && Math.abs(f.t-t) <= hop) ? f.cents : null);
+  }
+  return out;
+}
+function alignOffset(refFrames, userFrames, hop = 0.045){
+  if (!refFrames.length || !userFrames.length) return 0;
+  const R = resampleUniform(refFrames, 0, refFrames[refFrames.length-1].t, hop);
+  const U = resampleUniform(userFrames, 0, userFrames[userFrames.length-1].t, hop);
+  let best = {off:0, cost:Infinity};
+  for (let s = -(U.length-5); s <= R.length-5; s++){
+    const diffs = [];
+    for (let j = 0; j < U.length; j++){
+      const r = R[j+s];
+      if (r != null && U[j] != null) diffs.push(U[j]-r);
+    }
+    if (diffs.length < 10) continue;
+    const m = median(diffs);
+    const oct = Math.round(m/1200)*1200;
+    const mad = median(diffs.map(d=>Math.abs(d-oct)));
+    const cost = mad + 300/Math.sqrt(diffs.length);
+    if (cost < best.cost) best = {off:s*hop, cost};
+  }
+  return best.off;
 }
 function dtwAlign(a, b){
   const n=a.length, m=b.length;
@@ -581,13 +622,12 @@ async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl})
   return medianFilterContour(frames, 5);
 }
 
-/* offline analysis of decoded file buffer (clean path) */
-function analyzeBufferOffline(){
-  const ab = state.fileBuffer;
+/* offline analysis of a decoded buffer over [t0, t1] (clean path) */
+function analyzeBufferRange(ab, t0, t1){
   const sr = ab.sampleRate;
   const ch0 = ab.getChannelData(0);
   const ch1 = ab.numberOfChannels > 1 ? ab.getChannelData(1) : null;
-  const i0 = Math.floor(state.clipStart*sr), i1 = Math.min(ch0.length, Math.floor(state.clipEnd*sr));
+  const i0 = Math.floor(t0*sr), i1 = Math.min(ch0.length, Math.floor(t1*sr));
   const frames = [];
   const N = 2048, hop = Math.round(sr*0.045);
   const win = new Float32Array(N);
@@ -597,6 +637,9 @@ function analyzeBufferOffline(){
     frames.push({ t:+(((i - i0))/sr).toFixed(3), cents: f0 ? hzToCents(f0) : null });
   }
   return medianFilterContour(frames, 5);
+}
+function analyzeBufferOffline(){
+  return analyzeBufferRange(state.fileBuffer, state.clipStart, state.clipEnd);
 }
 
 /* ---- step 2: reference ---- */
@@ -635,7 +678,65 @@ $('refBtn').onclick = async ()=>{
   $('refBtn').disabled = false;
 };
 
-/* ---- step 3: take ---- */
+/* ---- step 3: take (live) ---- */
+$('takeTabLive').onclick = ()=>{ $('takeTabLive').classList.add('on'); $('takeTabFile').classList.remove('on');
+  $('takePaneLive').style.display='block'; $('takePaneFile').style.display='none'; };
+$('takeTabFile').onclick = ()=>{ $('takeTabFile').classList.add('on'); $('takeTabLive').classList.remove('on');
+  $('takePaneFile').style.display='block'; $('takePaneLive').style.display='none'; };
+
+let takeFileBuffer = null;
+$('takeFileInput').onchange = async (e)=>{
+  const f = e.target.files[0]; if (!f) return;
+  setMsg('s3msg','Decoding…');
+  try{
+    const ctx = getCtx();
+    const arr = await f.arrayBuffer();
+    takeFileBuffer = await ctx.decodeAudioData(arr.slice(0));
+    if (takeFileBuffer.duration > 90){
+      setMsg('s3msg', `File is ${fmt(takeFileBuffer.duration)} — only the first 90s will be analyzed.`,'w');
+    } else {
+      setMsg('s3msg', `Loaded ${f.name} (${fmt(takeFileBuffer.duration)}).`,'ok');
+    }
+    $('takeAnalyzeBtn').disabled = false;
+  }catch(err){
+    takeFileBuffer = null; $('takeAnalyzeBtn').disabled = true;
+    setMsg('s3msg','Couldn\u2019t decode this file in your browser (Opus/WhatsApp notes won\u2019t decode in Safari). Convert to mp3/wav/m4a.','err');
+  }
+};
+
+$('takeAnalyzeBtn').onclick = async ()=>{
+  if (!takeFileBuffer) return;
+  $('takeAnalyzeBtn').disabled = true; setMsg('s3msg','Analyzing & aligning…');
+  await new Promise(r=>setTimeout(r,30));
+  try{
+    let frames = analyzeBufferRange(takeFileBuffer, 0, Math.min(takeFileBuffer.duration, 90));
+    const voiced = frames.filter(f=>f.cents!=null).length;
+    if (voiced < 10){
+      setMsg('s3msg','No singing detected in that file.','err');
+      $('takeAnalyzeBtn').disabled = false; return;
+    }
+    const off = alignOffset(state.refFrames, frames);
+    frames = frames.map(f=>({...f, t:+(f.t+off).toFixed(3)}))
+                   .filter(f=>f.t >= -0.5 && f.t <= (state.clipEnd-state.clipStart)+0.5);
+    const voicedIn = frames.filter(f=>f.cents!=null).length;
+    if (voicedIn < 10){
+      setMsg('s3msg','Couldn\u2019t align this take to the reference — the melodies don\u2019t overlap. Is this a recording of the same passage?','err');
+      $('takeAnalyzeBtn').disabled = false; return;
+    }
+    makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd-state.clipStart);
+    state.userFrames = frames;
+    state.takeUploaded = true;
+    setMsg('s3msg', `Aligned (offset ${off>=0?'+':''}${off.toFixed(2)}s applied).`,'ok');
+    markDone(3, 'uploaded');
+    renderResults();
+    openStep(4);
+  }catch(err){
+    setMsg('s3msg','Analysis failed: ' + err.message,'err');
+  }
+  $('takeAnalyzeBtn').disabled = false;
+};
+
+/* ---- step 3: take (live recording) ---- */
 $('takeBtn').onclick = async ()=>{
   $('takeBtn').disabled = true; setMsg('s3msg','');
   try{
@@ -651,6 +752,7 @@ $('takeBtn').onclick = async ()=>{
       $('takeBtn').disabled = false; return;
     }
     state.userFrames = frames;
+    state.takeUploaded = false;
     markDone(3, 'recorded');
     renderResults();
     openStep(4);
@@ -705,6 +807,7 @@ function renderResults(){
   if (early>=2) tips.push(`<b>You rush entries</b> (${early} notes) — sit back on the beat.`);
   if (missed>=1) tips.push(`<b>${missed} note${missed>1?'s':''} missed</b> — listen to the reference passage again before retrying; sing it on \u201Cla\u201D first to lock the melody without lyrics.`);
   if (!tips.length) tips.push('Mixed results — retry the same clip and watch the cyan line against the amber blocks in real time.');
+  if (state.takeUploaded) tips.push('<b>Uploaded take:</b> global offset was removed during alignment, so early/late verdicts are relative to your own average timing, not absolute.');
   $('tipsBox').innerHTML = tips.join('<br><br>');
 }
 
