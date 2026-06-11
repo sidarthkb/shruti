@@ -442,7 +442,13 @@ function parseTime(s){
     if (p.some(isNaN)) return null; return p.length===2 ? p[0]*60+p[1] : null; }
   const v = Number(s); return isNaN(v) ? null : v;
 }
-function fmt(t){ const m = Math.floor(t/60), s = (t%60); return m + ':' + (s<10?'0':'') + s.toFixed(s%1?1:0).padStart(s%1?4:2,'0'); }
+function fmt(t){
+  const m = Math.floor(t/60);
+  const s = t - m*60;
+  const frac = s - Math.floor(s);
+  const sStr = frac > 0.05 ? s.toFixed(1) : String(Math.floor(s));
+  return m + ':' + (s < 10 ? '0' : '') + sStr;
+}
 
 /* ---- source abstraction ---- */
 const source = {
@@ -503,7 +509,13 @@ $('fileInput').onchange = async (e)=>{
   const url = URL.createObjectURL(f);
   const a = $('fileAudio'); a.src = url;
   a.onloadedmetadata = ()=>{ state.fileLoaded = true;
-    setMsg('s1msg', `Loaded ${f.name} (${fmt(a.duration)}). Set start/end.`, 'ok'); refreshClipButtons(); };
+    $('clipStart').value = '0:00';
+    const capped = a.duration > 60;
+    $('clipEnd').value = fmt(Math.min(a.duration, 60));
+    setMsg('s1msg', `Loaded ${f.name} (${fmt(a.duration)}).` + (capped
+      ? ' Clip end preset to 1:00 (analysis max is 60s) — adjust to the passage you want.'
+      : ' Clip preset to the full file — adjust if you want a shorter passage.'), 'ok');
+    refreshClipButtons(); };
   // decode for offline (clean) reference analysis
   try{
     const ctx = getCtx();
