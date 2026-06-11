@@ -211,6 +211,7 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
     <div class="btnrow">
       <button class="you" id="retryBtn">↺ Sing again</button>
       <button class="ghost" id="restartBtn">New clip</button>
+      <button class="ghost" id="diagBtn">⬇ diagnostics</button>
     </div>
   </div>
 </section>
@@ -400,7 +401,13 @@ function scoreNotes(refNotes, refFrames, userFrames, dtwPath){
     if (timing != null && Math.abs(timing) > 0.12) score *= 0.9;
     results.push({note, verdict, dev, timing, score});
   }
-  const overall = results.length ? Math.round(results.reduce((s,r)=>s+r.score,0)/results.length) : 0;
+  // duration-weighted: a 0.2s fragment must not outvote a 1.5s sustained note
+  let wSum = 0, wScore = 0;
+  for (const r of results){
+    const w = Math.max(0.05, r.note.t1 - r.note.t0);
+    wSum += w; wScore += w * r.score;
+  }
+  const overall = wSum ? Math.round(wScore/wSum) : 0;
   return {results, overall, sungCount: results.filter(r=>r.verdict!=='missed').length, total: results.length};
 }
 
@@ -677,7 +684,13 @@ $('refBtn').onclick = async ()=>{
       $('refBtn').disabled = false; return;
     }
     state.refFrames = frames; state.refNotes = notes;
-    setMsg('s2msg',`Reference locked — ${notes.length} notes detected (${notes[0].name} … ${notes[notes.length-1].name}).`,'ok');
+    const melodyDur = notes.reduce((s,n)=>s+(n.t1-n.t0),0);
+    const covPct = Math.round(100*melodyDur/(state.clipEnd-state.clipStart));
+    if (covPct < 25){
+      setMsg('s2msg',`Reference locked — ${notes.length} notes, but they cover only ${covPct}% of the clip. The mix is masking the melody, so scores will be indicative, not precise (±5 points of measurement noise). A vocal-forward or isolated-vocal source gives a much tighter test.`,'w');
+    } else {
+      setMsg('s2msg',`Reference locked — ${notes.length} notes covering ${covPct}% of the clip (${notes[0].name} … ${notes[notes.length-1].name}).`,'ok');
+    }
     markDone(2, notes.length + ' notes');
     openStep(3);
   }catch(err){
@@ -736,10 +749,11 @@ $('takeAnalyzeBtn').onclick = async ()=>{
     makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd-state.clipStart);
     state.userFrames = frames;
     state.takeUploaded = true;
+    state.alignOffsetApplied = off;
     setMsg('s3msg', `Aligned (offset ${off>=0?'+':''}${off.toFixed(2)}s applied).`,'ok');
     markDone(3, 'uploaded');
-    renderResults();
     openStep(4);
+    renderResults();
   }catch(err){
     setMsg('s3msg','Analysis failed: ' + err.message,'err');
   }
@@ -764,8 +778,8 @@ $('takeBtn').onclick = async ()=>{
     state.userFrames = frames;
     state.takeUploaded = false;
     markDone(3, 'recorded');
-    renderResults();
     openStep(4);
+    renderResults();
   }catch(err){
     setMsg('s3msg','Recording failed: ' + err.message, 'err');
   }
@@ -778,6 +792,7 @@ function renderResults(){
   const user = state.userFrames.map(f=>({...f, cents: f.cents==null?null:f.cents-shift}));
   const {path} = dtwAlign(state.refFrames.map(f=>f.cents), user.map(f=>f.cents));
   const report = scoreNotes(state.refNotes, state.refFrames, user, path);
+  state.lastReport = report; state.lastOctaveShift = shift;
 
   $('scoreNum').textContent = report.overall;
   $('scoreNum').style.color = report.overall>=80 ? 'var(--good)' : report.overall>=55 ? 'var(--warn)' : 'var(--bad)';
@@ -890,7 +905,33 @@ function drawContourScored(ctx, frames, refNotes, X, Y){
   }
 }
 
-/* ---- retry / restart ---- */
+/* ---- retry / restart / diagnostics ---- */
+$('diagBtn').onclick = ()=>{
+  const diag = {
+    app: 'shruti', when: new Date().toISOString(),
+    srcKind: state.srcKind,
+    clip: { start: state.clipStart, end: state.clipEnd },
+    takeUploaded: !!state.takeUploaded,
+    alignOffsetApplied: state.alignOffsetApplied ?? null,
+    octaveShiftApplied: state.lastOctaveShift ?? null,
+    refVoicedFrames: state.refFrames?.filter(f=>f.cents!=null).length,
+    userVoicedFrames: state.userFrames?.filter(f=>f.cents!=null).length,
+    refNotes: state.refNotes,
+    report: state.lastReport?.results.map(r=>({
+      name: r.note.name, t0: r.note.t0, t1: r.note.t1, refCents: +r.note.cents.toFixed(1),
+      verdict: r.verdict, dev: r.dev==null?null:+r.dev.toFixed(1),
+      timing: r.timing==null?null:+r.timing.toFixed(3), score: +r.score.toFixed(1)
+    })),
+    overall: state.lastReport?.overall,
+    refFrames: state.refFrames, userFrames: state.userFrames,
+  };
+  const blob = new Blob([JSON.stringify(diag)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'shruti-diag.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
 $('retryBtn').onclick = ()=>{ openStep(3); };
 $('restartBtn').onclick = ()=>{ location.reload(); };
 
