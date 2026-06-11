@@ -372,9 +372,19 @@ function scoreNotes(refNotes, refFrames, userFrames, dtwPath){
     }
     const coverage = rIdx.length ? userCents.length/rIdx.length : 0;
     let userOnset = null;
-    for (const uf of userFrames){
-      if (uf.t >= note.t0-0.4 && uf.t <= note.t1 && uf.cents != null
-          && Math.abs(uf.cents-note.cents) < 250){ userOnset = uf.t; break; }
+    for (let k = 0; k < userFrames.length; k++){
+      const uf = userFrames[k];
+      if (uf.t < note.t0 - 0.4) continue;
+      if (uf.t > note.t1) break;
+      if (uf.cents == null || Math.abs(uf.cents - note.cents) > 60) continue;
+      const nxt = userFrames[k + 1];
+      const sustained = nxt && nxt.cents != null && Math.abs(nxt.cents - note.cents) <= 80;
+      if (!sustained) continue; // single-frame blip (vibrato peak), not an entry
+      const prev = userFrames[k - 1];
+      const freshEntry = !prev || prev.cents == null || Math.abs(prev.cents - note.cents) > 60;
+      if (freshEntry){ userOnset = uf.t; break; }
+      // already on-pitch with no entry crossing: timing unmeasurable, not "early"
+      break;
     }
     if (coverage < 0.25 || userCents.length < 3){
       results.push({note, verdict:'missed', dev:null, timing:null, score:0}); continue;
