@@ -133,12 +133,12 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
       <div class="note-msg">A clean file (isolated vocal or vocal-forward track) gives the most accurate reference — no speaker-to-mic hop needed.</div>
       <audio id="fileAudio" style="display:none"></audio>
     </div>
-    <label>Clip start / end <span style="text-transform:none">(secs or m:ss)</span></label>
+    <label>Clip start / end <span style="text-transform:none">(secs or m:ss — or just scrub the video and tap “set”)</span></label>
     <div class="row">
-      <input type="text" id="clipStart" placeholder="0:42" inputmode="numeric">
-      <button class="tiny" id="setStart">⟵ now</button>
-      <input type="text" id="clipEnd" placeholder="1:02" inputmode="numeric">
-      <button class="tiny" id="setEnd">⟵ now</button>
+      <input type="text" id="clipStart" placeholder="0:42" inputmode="text" autocomplete="off">
+      <button class="tiny" id="setStart">set start</button>
+      <input type="text" id="clipEnd" placeholder="1:02" inputmode="text" autocomplete="off">
+      <button class="tiny" id="setEnd">set end</button>
     </div>
     <div class="note-msg">Keep it 5–30 seconds. Pick a vocal-forward passage — a dense mix will confuse the pitch tracker.</div>
     <div class="btnrow">
@@ -438,9 +438,16 @@ function markDone(n, sub){ $('step'+n).classList.add('done'); if (sub) $('s'+n+'
 /* ---- time parsing ---- */
 function parseTime(s){
   s = (s||'').trim(); if (!s) return null;
-  if (s.includes(':')){ const p = s.split(':').map(Number);
-    if (p.some(isNaN)) return null; return p.length===2 ? p[0]*60+p[1] : null; }
-  const v = Number(s); return isNaN(v) ? null : v;
+  if (s.includes(':')){
+    const parts = s.split(':').map(x=>x.trim());
+    if (parts.some(p => p === '' || isNaN(Number(p)) || Number(p) < 0)) return null;
+    const n = parts.map(Number);
+    if (n.length === 2) return n[0]*60 + n[1];       // m:ss
+    if (n.length === 3) return n[0]*3600 + n[1]*60 + n[2]; // h:mm:ss
+    return null;
+  }
+  const v = Number(s);
+  return (isNaN(v) || v < 0) ? null : v;
 }
 function fmt(t){
   const m = Math.floor(t/60);
