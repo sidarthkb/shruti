@@ -98,6 +98,14 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
 .ncard .pitch{font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:17px; width:46px; flex:none}
 .ncard .v{font-weight:600}
 .ncard .d{margin-left:auto; text-align:right; color:var(--mut); font-size:11.5px; line-height:1.45; flex:none}
+.ncard .nplay{display:flex; flex-direction:column; gap:5px; flex:none; margin-left:10px}
+.pbtn{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500;
+  padding:5px 9px; border-radius:7px; border:1px solid var(--edge); cursor:pointer;
+  background:var(--panel); min-width:58px; text-align:center; transition:all .12s}
+.pbtn.ref{color:var(--ref); border-color:rgba(245,169,75,0.4)}
+.pbtn.you{color:var(--you); border-color:rgba(89,216,210,0.4)}
+.pbtn.ref.playing{background:var(--ref); color:#1A1208}
+.pbtn.you.playing{background:var(--you); color:#06201F}
 .v.good{color:var(--good)}.v.bad{color:var(--bad)}.v.warn{color:var(--warn)}.v.miss{color:var(--mut)}
 .tips{margin-top:16px; background:var(--panel2); border:1px solid var(--edge);
   border-radius:10px; padding:14px 16px; font-size:12.5px; line-height:1.7; color:var(--mut)}
@@ -133,12 +141,12 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
       <div class="note-msg">A clean file (isolated vocal or vocal-forward track) gives the most accurate reference — no speaker-to-mic hop needed.</div>
       <audio id="fileAudio" style="display:none"></audio>
     </div>
-    <label>Clip start / end <span style="text-transform:none">(secs or m:ss)</span></label>
+    <label>Clip start / end <span style="text-transform:none">(secs or m:ss — or just scrub the video and tap “set”)</span></label>
     <div class="row">
-      <input type="text" id="clipStart" placeholder="0:42" inputmode="numeric">
-      <button class="tiny" id="setStart">⟵ now</button>
-      <input type="text" id="clipEnd" placeholder="1:02" inputmode="numeric">
-      <button class="tiny" id="setEnd">⟵ now</button>
+      <input type="text" id="clipStart" placeholder="0:42" inputmode="text" autocomplete="off">
+      <button class="tiny" id="setStart">set start</button>
+      <input type="text" id="clipEnd" placeholder="1:02" inputmode="text" autocomplete="off">
+      <button class="tiny" id="setEnd">set end</button>
     </div>
     <div class="note-msg">Keep it 5–30 seconds. Pick a vocal-forward passage — a dense mix will confuse the pitch tracker.</div>
     <div class="btnrow">
@@ -168,12 +176,24 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
 <section class="step locked" id="step3">
   <div class="step-head"><div class="snum">3</div><div class="stitle">Sing your take</div><div class="ssub" id="s3sub"></div></div>
   <div class="step-body">
+    <div class="tabs">
+      <button id="takeTabLive" class="on">Sing live</button>
+      <button id="takeTabFile">Upload a take</button>
+    </div>
+    <div id="takePaneLive">
     <div class="note-msg">The clip plays <b style="color:var(--ink)">muted</b> as your visual cue — sing over it. Octave doesn't matter; sing where your voice is comfortable.</div>
     <div class="toggle">
       <input type="checkbox" id="monitorTgl">
       <span>Play clip audio while I sing — <b style="color:var(--warn)">wired headphones only</b>, or it bleeds into the mic and wrecks the analysis</span>
     </div>
     <div class="btnrow"><button class="you" id="takeBtn">● Record my take</button></div>
+    </div>
+    <div id="takePaneFile" style="display:none">
+      <label>Your recorded take (mp3 / wav / m4a)</label>
+      <input type="file" id="takeFileInput" accept="audio/*">
+      <div class="note-msg">Leading silence is fine — the take is auto-aligned to the reference. Heads up: because the global offset is removed, early/late verdicts are <b style="color:var(--ink)">relative</b>, not absolute.</div>
+      <div class="btnrow"><button class="you" id="takeAnalyzeBtn" disabled>⚡ Analyze my take</button></div>
+    </div>
     <div class="livewrap">
       <canvas class="live" id="takeLive"></canvas>
       <div class="meter"><i id="takeMeter"></i></div>
@@ -199,6 +219,7 @@ canvas.roll{width:100%; height:300px; background:var(--panel2);
     <div class="btnrow">
       <button class="you" id="retryBtn">↺ Sing again</button>
       <button class="ghost" id="restartBtn">New clip</button>
+      <button class="ghost" id="diagBtn">⬇ diagnostics</button>
     </div>
   </div>
 </section>
@@ -298,6 +319,35 @@ function octaveShift(refFrames, userFrames){
   if (diffs.length < 8) return 0;
   return Math.round(median(diffs)/1200)*1200;
 }
+function resampleUniform(frames, t0, t1, hop = 0.045){
+  const out = []; let i = 0;
+  for (let t = t0; t <= t1 + 1e-9; t += hop){
+    while (i < frames.length-1 && Math.abs(frames[i+1].t-t) <= Math.abs(frames[i].t-t)) i++;
+    const f = frames[i];
+    out.push((f && f.cents != null && Math.abs(f.t-t) <= hop) ? f.cents : null);
+  }
+  return out;
+}
+function alignOffset(refFrames, userFrames, hop = 0.045){
+  if (!refFrames.length || !userFrames.length) return 0;
+  const R = resampleUniform(refFrames, 0, refFrames[refFrames.length-1].t, hop);
+  const U = resampleUniform(userFrames, 0, userFrames[userFrames.length-1].t, hop);
+  let best = {off:0, cost:Infinity};
+  for (let s = -(U.length-5); s <= R.length-5; s++){
+    const diffs = [];
+    for (let j = 0; j < U.length; j++){
+      const r = R[j+s];
+      if (r != null && U[j] != null) diffs.push(U[j]-r);
+    }
+    if (diffs.length < 10) continue;
+    const m = median(diffs);
+    const oct = Math.round(m/1200)*1200;
+    const mad = median(diffs.map(d=>Math.abs(d-oct)));
+    const cost = mad + 300/Math.sqrt(diffs.length);
+    if (cost < best.cost) best = {off:s*hop, cost};
+  }
+  return best.off;
+}
 function dtwAlign(a, b){
   const n=a.length, m=b.length;
   if (!n || !m) return {path:[], cost:Infinity};
@@ -331,9 +381,19 @@ function scoreNotes(refNotes, refFrames, userFrames, dtwPath){
     }
     const coverage = rIdx.length ? userCents.length/rIdx.length : 0;
     let userOnset = null;
-    for (const uf of userFrames){
-      if (uf.t >= note.t0-0.4 && uf.t <= note.t1 && uf.cents != null
-          && Math.abs(uf.cents-note.cents) < 250){ userOnset = uf.t; break; }
+    for (let k = 0; k < userFrames.length; k++){
+      const uf = userFrames[k];
+      if (uf.t < note.t0 - 0.4) continue;
+      if (uf.t > note.t1) break;
+      if (uf.cents == null || Math.abs(uf.cents - note.cents) > 60) continue;
+      const nxt = userFrames[k + 1];
+      const sustained = nxt && nxt.cents != null && Math.abs(nxt.cents - note.cents) <= 80;
+      if (!sustained) continue; // single-frame blip (vibrato peak), not an entry
+      const prev = userFrames[k - 1];
+      const freshEntry = !prev || prev.cents == null || Math.abs(prev.cents - note.cents) > 60;
+      if (freshEntry){ userOnset = uf.t; break; }
+      // already on-pitch with no entry crossing: timing unmeasurable, not "early"
+      break;
     }
     if (coverage < 0.25 || userCents.length < 3){
       results.push({note, verdict:'missed', dev:null, timing:null, score:0}); continue;
@@ -349,7 +409,13 @@ function scoreNotes(refNotes, refFrames, userFrames, dtwPath){
     if (timing != null && Math.abs(timing) > 0.12) score *= 0.9;
     results.push({note, verdict, dev, timing, score});
   }
-  const overall = results.length ? Math.round(results.reduce((s,r)=>s+r.score,0)/results.length) : 0;
+  // duration-weighted: a 0.2s fragment must not outvote a 1.5s sustained note
+  let wSum = 0, wScore = 0;
+  for (const r of results){
+    const w = Math.max(0.05, r.note.t1 - r.note.t0);
+    wSum += w; wScore += w * r.score;
+  }
+  const overall = wSum ? Math.round(wScore/wSum) : 0;
   return {results, overall, sungCount: results.filter(r=>r.verdict!=='missed').length, total: results.length};
 }
 
@@ -380,11 +446,24 @@ function markDone(n, sub){ $('step'+n).classList.add('done'); if (sub) $('s'+n+'
 /* ---- time parsing ---- */
 function parseTime(s){
   s = (s||'').trim(); if (!s) return null;
-  if (s.includes(':')){ const p = s.split(':').map(Number);
-    if (p.some(isNaN)) return null; return p.length===2 ? p[0]*60+p[1] : null; }
-  const v = Number(s); return isNaN(v) ? null : v;
+  if (s.includes(':')){
+    const parts = s.split(':').map(x=>x.trim());
+    if (parts.some(p => p === '' || isNaN(Number(p)) || Number(p) < 0)) return null;
+    const n = parts.map(Number);
+    if (n.length === 2) return n[0]*60 + n[1];       // m:ss
+    if (n.length === 3) return n[0]*3600 + n[1]*60 + n[2]; // h:mm:ss
+    return null;
+  }
+  const v = Number(s);
+  return (isNaN(v) || v < 0) ? null : v;
 }
-function fmt(t){ const m = Math.floor(t/60), s = (t%60); return m + ':' + (s<10?'0':'') + s.toFixed(s%1?1:0).padStart(s%1?4:2,'0'); }
+function fmt(t){
+  const m = Math.floor(t/60);
+  const s = t - m*60;
+  const frac = s - Math.floor(s);
+  const sStr = frac > 0.05 ? s.toFixed(1) : String(Math.floor(s));
+  return m + ':' + (s < 10 ? '0' : '') + sStr;
+}
 
 /* ---- source abstraction ---- */
 const source = {
@@ -445,7 +524,13 @@ $('fileInput').onchange = async (e)=>{
   const url = URL.createObjectURL(f);
   const a = $('fileAudio'); a.src = url;
   a.onloadedmetadata = ()=>{ state.fileLoaded = true;
-    setMsg('s1msg', `Loaded ${f.name} (${fmt(a.duration)}). Set start/end.`, 'ok'); refreshClipButtons(); };
+    $('clipStart').value = '0:00';
+    const capped = a.duration > 60;
+    $('clipEnd').value = fmt(Math.min(a.duration, 60));
+    setMsg('s1msg', `Loaded ${f.name} (${fmt(a.duration)}).` + (capped
+      ? ' Clip end preset to 1:00 (analysis max is 60s) — adjust to the passage you want.'
+      : ' Clip preset to the full file — adjust if you want a shorter passage.'), 'ok');
+    refreshClipButtons(); };
   // decode for offline (clean) reference analysis
   try{
     const ctx = getCtx();
@@ -530,7 +615,8 @@ function makeLiveDrawer(canvas){
   };
 }
 
-/* generic capture: plays clip, polls mic pitch on the source clock */
+/* generic capture: plays clip, polls mic pitch on the source clock,
+   and records the raw mic audio so per-note slices can be replayed */
 async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl}){
   const ctx = getCtx();
   const stream = await getMic();
@@ -542,6 +628,20 @@ async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl})
   const draw = makeLiveDrawer(liveCanvas);
   const total = state.clipEnd - state.clipStart;
   const frames = [];
+
+  // raw audio recorder: collect samples only while inside the clip window
+  const recChunks = [];
+  let recording = false;
+  const rec = ctx.createScriptProcessor(4096, 1, 1);
+  rec.onaudioprocess = (e)=>{
+    if (!recording) return;
+    recChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  srcNode.connect(rec);
+  const silentSink = ctx.createGain();
+  silentSink.gain.value = 0; // guarantee the mic never reaches the speakers
+  rec.connect(silentSink);
+  silentSink.connect(ctx.destination);
 
   source.mute(muteSource);
   source.play(state.clipStart);
@@ -558,6 +658,7 @@ async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl})
 
   statEl.innerHTML = '<span class="rec">● REC</span> capturing';
   state.capturing = true;
+  recording = true;
   await new Promise(res=>{
     const tick = setInterval(()=>{
       const t = source.time() - state.clipStart;
@@ -575,19 +676,31 @@ async function captureContour({muteSource, liveCanvas, meterEl, statEl, timeEl})
     }, 45);
   });
   state.capturing = false;
+  recording = false;
   source.stop(); source.mute(false);
   meterEl.style.width = '0%';
-  srcNode.disconnect();
+  rec.disconnect(); silentSink.disconnect(); srcNode.disconnect();
+
+  // stitch recorded chunks into one buffer on the clip clock (t=0 at clip start)
+  if (recChunks.length){
+    let len = 0; for (const c of recChunks) len += c.length;
+    const merged = new Float32Array(len);
+    let off = 0; for (const c of recChunks){ merged.set(c, off); off += c.length; }
+    const ab = ctx.createBuffer(1, len, ctx.sampleRate);
+    ab.getChannelData(0).set(merged);
+    state.userAudio = ab;
+  } else {
+    state.userAudio = null;
+  }
   return medianFilterContour(frames, 5);
 }
 
-/* offline analysis of decoded file buffer (clean path) */
-function analyzeBufferOffline(){
-  const ab = state.fileBuffer;
+/* offline analysis of a decoded buffer over [t0, t1] (clean path) */
+function analyzeBufferRange(ab, t0, t1){
   const sr = ab.sampleRate;
   const ch0 = ab.getChannelData(0);
   const ch1 = ab.numberOfChannels > 1 ? ab.getChannelData(1) : null;
-  const i0 = Math.floor(state.clipStart*sr), i1 = Math.min(ch0.length, Math.floor(state.clipEnd*sr));
+  const i0 = Math.floor(t0*sr), i1 = Math.min(ch0.length, Math.floor(t1*sr));
   const frames = [];
   const N = 2048, hop = Math.round(sr*0.045);
   const win = new Float32Array(N);
@@ -597,6 +710,9 @@ function analyzeBufferOffline(){
     frames.push({ t:+(((i - i0))/sr).toFixed(3), cents: f0 ? hzToCents(f0) : null });
   }
   return medianFilterContour(frames, 5);
+}
+function analyzeBufferOffline(){
+  return analyzeBufferRange(state.fileBuffer, state.clipStart, state.clipEnd);
 }
 
 /* ---- step 2: reference ---- */
@@ -624,7 +740,13 @@ $('refBtn').onclick = async ()=>{
       $('refBtn').disabled = false; return;
     }
     state.refFrames = frames; state.refNotes = notes;
-    setMsg('s2msg',`Reference locked — ${notes.length} notes detected (${notes[0].name} … ${notes[notes.length-1].name}).`,'ok');
+    const melodyDur = notes.reduce((s,n)=>s+(n.t1-n.t0),0);
+    const covPct = Math.round(100*melodyDur/(state.clipEnd-state.clipStart));
+    if (covPct < 25){
+      setMsg('s2msg',`Reference locked — ${notes.length} notes, but they cover only ${covPct}% of the clip. The mix is masking the melody, so scores will be indicative, not precise (±5 points of measurement noise). A vocal-forward or isolated-vocal source gives a much tighter test.`,'w');
+    } else {
+      setMsg('s2msg',`Reference locked — ${notes.length} notes covering ${covPct}% of the clip (${notes[0].name} … ${notes[notes.length-1].name}).`,'ok');
+    }
     markDone(2, notes.length + ' notes');
     openStep(3);
   }catch(err){
@@ -635,7 +757,69 @@ $('refBtn').onclick = async ()=>{
   $('refBtn').disabled = false;
 };
 
-/* ---- step 3: take ---- */
+/* ---- step 3: take (live) ---- */
+$('takeTabLive').onclick = ()=>{ $('takeTabLive').classList.add('on'); $('takeTabFile').classList.remove('on');
+  $('takePaneLive').style.display='block'; $('takePaneFile').style.display='none'; };
+$('takeTabFile').onclick = ()=>{ $('takeTabFile').classList.add('on'); $('takeTabLive').classList.remove('on');
+  $('takePaneFile').style.display='block'; $('takePaneLive').style.display='none'; };
+
+let takeFileBuffer = null;
+$('takeFileInput').onchange = async (e)=>{
+  const f = e.target.files[0]; if (!f) return;
+  setMsg('s3msg','Decoding…');
+  try{
+    const ctx = getCtx();
+    const arr = await f.arrayBuffer();
+    takeFileBuffer = await ctx.decodeAudioData(arr.slice(0));
+    if (takeFileBuffer.duration > 90){
+      setMsg('s3msg', `File is ${fmt(takeFileBuffer.duration)} — only the first 90s will be analyzed.`,'w');
+    } else {
+      setMsg('s3msg', `Loaded ${f.name} (${fmt(takeFileBuffer.duration)}).`,'ok');
+    }
+    $('takeAnalyzeBtn').disabled = false;
+  }catch(err){
+    takeFileBuffer = null; $('takeAnalyzeBtn').disabled = true;
+    setMsg('s3msg','Couldn\u2019t decode this file in your browser (Opus/WhatsApp notes won\u2019t decode in Safari). Convert to mp3/wav/m4a.','err');
+  }
+};
+
+$('takeAnalyzeBtn').onclick = async ()=>{
+  if (!takeFileBuffer) return;
+  $('takeAnalyzeBtn').disabled = true; setMsg('s3msg','Analyzing & aligning…');
+  await new Promise(r=>setTimeout(r,30));
+  try{
+    let frames = analyzeBufferRange(takeFileBuffer, 0, Math.min(takeFileBuffer.duration, 90));
+    const voiced = frames.filter(f=>f.cents!=null).length;
+    if (voiced < 10){
+      setMsg('s3msg','No singing detected in that file.','err');
+      $('takeAnalyzeBtn').disabled = false; return;
+    }
+    const off = alignOffset(state.refFrames, frames);
+    frames = frames.map(f=>({...f, t:+(f.t+off).toFixed(3)}))
+                   .filter(f=>f.t >= -0.5 && f.t <= (state.clipEnd-state.clipStart)+0.5);
+    const voicedIn = frames.filter(f=>f.cents!=null).length;
+    if (voicedIn < 10){
+      setMsg('s3msg','Couldn\u2019t align this take to the reference — the melodies don\u2019t overlap. Is this a recording of the same passage?','err');
+      $('takeAnalyzeBtn').disabled = false; return;
+    }
+    makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd-state.clipStart);
+    state.userFrames = frames;
+    state.takeUploaded = true;
+    state.alignOffsetApplied = off;
+    // playback source: clip-clock time t maps to file time (t - off)
+    state.userAudio = takeFileBuffer;
+    state.userAudioMapsToFileTime = off;
+    setMsg('s3msg', `Aligned (offset ${off>=0?'+':''}${off.toFixed(2)}s applied).`,'ok');
+    markDone(3, 'uploaded');
+    openStep(4);
+    renderResults();
+  }catch(err){
+    setMsg('s3msg','Analysis failed: ' + err.message,'err');
+  }
+  $('takeAnalyzeBtn').disabled = false;
+};
+
+/* ---- step 3: take (live recording) ---- */
 $('takeBtn').onclick = async ()=>{
   $('takeBtn').disabled = true; setMsg('s3msg','');
   try{
@@ -651,14 +835,69 @@ $('takeBtn').onclick = async ()=>{
       $('takeBtn').disabled = false; return;
     }
     state.userFrames = frames;
+    state.takeUploaded = false;
+    state.userAudioMapsToFileTime = 0; // live buffer already on clip clock
     markDone(3, 'recorded');
-    renderResults();
     openStep(4);
+    renderResults();
   }catch(err){
     setMsg('s3msg','Recording failed: ' + err.message, 'err');
   }
   $('takeBtn').disabled = false;
 };
+
+/* ---- per-note slice playback ---- */
+const PAD = 0.15; // 150ms padding around each note slice
+let activeSliceSrc = null;     // currently-playing BufferSource
+let activeYTStop = null;       // timer that pauses the YT player
+
+function stopAllSlices(){
+  if (activeSliceSrc){ try{ activeSliceSrc.stop(); }catch(e){} activeSliceSrc = null; }
+  if (activeYTStop){ clearTimeout(activeYTStop); activeYTStop = null; }
+  if (state.srcKind === 'yt' && state.player){ try{ state.player.pauseVideo(); }catch(e){} }
+  document.querySelectorAll('.playing').forEach(el=>el.classList.remove('playing'));
+}
+
+function playBufferSlice(ab, startSec, endSec, btn){
+  stopAllSlices();
+  const ctx = getCtx();
+  const s = Math.max(0, startSec - PAD), e = Math.min(ab.duration, endSec + PAD);
+  if (e <= s) return;
+  const src = ctx.createBufferSource();
+  src.buffer = ab; src.connect(ctx.destination);
+  src.start(0, s, e - s);
+  activeSliceSrc = src;
+  if (btn) btn.classList.add('playing');
+  src.onended = ()=>{ if (btn) btn.classList.remove('playing'); if (activeSliceSrc===src) activeSliceSrc=null; };
+}
+
+function playYTSlice(absStart, absEnd, btn){
+  stopAllSlices();
+  if (!state.player) return;
+  const s = Math.max(0, absStart - PAD), e = absEnd + PAD;
+  state.player.seekTo(s, true); state.player.playVideo();
+  if (btn) btn.classList.add('playing');
+  activeYTStop = setTimeout(()=>{
+    try{ state.player.pauseVideo(); }catch(err){}
+    if (btn) btn.classList.remove('playing');
+    activeYTStop = null;
+  }, (e - s) * 1000);
+}
+
+// reference slice: note times are clip-clock (0 = clip start)
+function playRefNote(note, btn){
+  if (state.srcKind === 'file' && state.fileBuffer){
+    playBufferSlice(state.fileBuffer, state.clipStart + note.t0, state.clipStart + note.t1, btn);
+  } else if (state.srcKind === 'yt' && state.player){
+    playYTSlice(state.clipStart + note.t0, state.clipStart + note.t1, btn);
+  }
+}
+// take slice: userAudio is on clip clock for live, or file-time-offset for uploads
+function playTakeNote(note, btn){
+  if (!state.userAudio) return;
+  const mapBack = state.userAudioMapsToFileTime || 0; // clipClock = fileTime + off  ->  fileTime = clipClock - off
+  playBufferSlice(state.userAudio, note.t0 - mapBack, note.t1 - mapBack, btn);
+}
 
 /* ---- step 4: results ---- */
 function renderResults(){
@@ -666,6 +905,7 @@ function renderResults(){
   const user = state.userFrames.map(f=>({...f, cents: f.cents==null?null:f.cents-shift}));
   const {path} = dtwAlign(state.refFrames.map(f=>f.cents), user.map(f=>f.cents));
   const report = scoreNotes(state.refNotes, state.refFrames, user, path);
+  state.lastReport = report; state.lastOctaveShift = shift;
 
   $('scoreNum').textContent = report.overall;
   $('scoreNum').style.color = report.overall>=80 ? 'var(--good)' : report.overall>=55 ? 'var(--warn)' : 'var(--bad)';
@@ -675,6 +915,8 @@ function renderResults(){
 
   // note cards
   const list = $('noteList'); list.innerHTML='';
+  const refPlayable = (state.srcKind==='file' && state.fileBuffer) || (state.srcKind==='yt' && state.player);
+  const takePlayable = !!state.userAudio;
   report.results.forEach((r,i)=>{
     const cls = r.verdict==='in tune' ? 'good' : r.verdict==='missed' ? 'miss'
       : r.verdict.startsWith('slightly') ? 'warn' : 'bad';
@@ -684,9 +926,23 @@ function renderResults(){
     const card = document.createElement('div');
     card.className = 'ncard';
     card.innerHTML = `<div class="pitch" style="color:var(--ref)">${r.note.name}</div>
-      <div><span class="v ${cls}">${r.verdict}</span><br>
+      <div class="ninfo"><span class="v ${cls}">${r.verdict}</span><br>
       <span style="color:var(--mut);font-size:11px">${fmt(r.note.t0)}–${fmt(r.note.t1)}</span></div>
-      <div class="d">${devTxt}${devTxt&&timTxt?'<br>':''}${timTxt}</div>`;
+      <div class="d">${devTxt}${devTxt&&timTxt?'<br>':''}${timTxt}</div>
+      <div class="nplay"></div>`;
+    const playWrap = card.querySelector('.nplay');
+    if (refPlayable){
+      const rb = document.createElement('button');
+      rb.className = 'pbtn ref'; rb.innerHTML = '▶ ref';
+      rb.onclick = ()=> playRefNote(r.note, rb);
+      playWrap.appendChild(rb);
+    }
+    if (takePlayable && r.verdict !== 'missed'){
+      const yb = document.createElement('button');
+      yb.className = 'pbtn you'; yb.innerHTML = '▶ you';
+      yb.onclick = ()=> playTakeNote(r.note, yb);
+      playWrap.appendChild(yb);
+    }
     list.appendChild(card);
   });
 
@@ -705,6 +961,7 @@ function renderResults(){
   if (early>=2) tips.push(`<b>You rush entries</b> (${early} notes) — sit back on the beat.`);
   if (missed>=1) tips.push(`<b>${missed} note${missed>1?'s':''} missed</b> — listen to the reference passage again before retrying; sing it on \u201Cla\u201D first to lock the melody without lyrics.`);
   if (!tips.length) tips.push('Mixed results — retry the same clip and watch the cyan line against the amber blocks in real time.');
+  if (state.takeUploaded) tips.push('<b>Uploaded take:</b> global offset was removed during alignment, so early/late verdicts are relative to your own average timing, not absolute.');
   $('tipsBox').innerHTML = tips.join('<br><br>');
 }
 
@@ -777,9 +1034,35 @@ function drawContourScored(ctx, frames, refNotes, X, Y){
   }
 }
 
-/* ---- retry / restart ---- */
-$('retryBtn').onclick = ()=>{ openStep(3); };
-$('restartBtn').onclick = ()=>{ location.reload(); };
+/* ---- retry / restart / diagnostics ---- */
+$('diagBtn').onclick = ()=>{
+  const diag = {
+    app: 'shruti', when: new Date().toISOString(),
+    srcKind: state.srcKind,
+    clip: { start: state.clipStart, end: state.clipEnd },
+    takeUploaded: !!state.takeUploaded,
+    alignOffsetApplied: state.alignOffsetApplied ?? null,
+    octaveShiftApplied: state.lastOctaveShift ?? null,
+    refVoicedFrames: state.refFrames?.filter(f=>f.cents!=null).length,
+    userVoicedFrames: state.userFrames?.filter(f=>f.cents!=null).length,
+    refNotes: state.refNotes,
+    report: state.lastReport?.results.map(r=>({
+      name: r.note.name, t0: r.note.t0, t1: r.note.t1, refCents: +r.note.cents.toFixed(1),
+      verdict: r.verdict, dev: r.dev==null?null:+r.dev.toFixed(1),
+      timing: r.timing==null?null:+r.timing.toFixed(3), score: +r.score.toFixed(1)
+    })),
+    overall: state.lastReport?.overall,
+    refFrames: state.refFrames, userFrames: state.userFrames,
+  };
+  const blob = new Blob([JSON.stringify(diag)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'shruti-diag.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('retryBtn').onclick = ()=>{ stopAllSlices(); openStep(3); };
+$('restartBtn').onclick = ()=>{ stopAllSlices(); location.reload(); };
 
 function setMsg(id, txt, cls){
   const el = $(id); el.textContent = txt;
