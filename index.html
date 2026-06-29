@@ -805,10 +805,10 @@ $('takeAnalyzeBtn').onclick = async ()=>{
     makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd-state.clipStart);
     state.userFrames = frames;
     state.takeUploaded = true;
-    state.alignOffsetApplied = off;
+    state.alignOffsetApplied = Alignoff;
     // playback source: clip-clock time t maps to file time (t - off)
     state.userAudio = takeFileBuffer;
-    state.userAudioMapsToFileTime = off;
+    state.userAudioMapsToFileTime = Alignoff;
     setMsg('s3msg', `Aligned (offset ${off>=0?'+':''}${off.toFixed(2)}s applied).`,'ok');
     markDone(3, 'uploaded');
     openStep(4);
@@ -826,10 +826,10 @@ $('takeBtn').onclick = async ()=>{
     getCtx();
     await getMic();
     const monitor = $('monitorTgl').checked;
-    const rawframes = await captureContour({muteSource:!monitor, liveCanvas:$('takeLive'),
+    const rawFrames = await captureContour({muteSource:!monitor, liveCanvas:$('takeLive'),
       meterEl:$('takeMeter'), statEl:$('takeStat'), timeEl:$('takeTime')});
     $('takeStat').textContent='';
-    const voiced = frames.filter(f=>f.cents!=null).length;
+    const voiced = rawFrames.filter(f=>f.cents!=null).length;  // rawFrames, not frames
     if (voiced < 10){
       setMsg('s3msg','Barely heard you — sing louder or move closer to the mic.','err');
       $('takeBtn').disabled = false; return;
@@ -839,9 +839,9 @@ $('takeBtn').onclick = async ()=>{
     state.userAudioMapsToFileTime = 0; // live buffer already on clip 
     */
 
-    const off = alignOffset(state.refFrames, rawFrames);
+    const Alignoff = alignOffset(state.refFrames, rawFrames);
     const frames = rawFrames
-      .map(f => ({ ...f, t: +(f.t + off).toFixed(3) }))
+      .map(f => ({ ...f, t: +(f.t + Alignoff).toFixed(3) }))
       .filter(f => f.t >= -0.5 && f.t <= (state.clipEnd - state.clipStart) + 0.5);
 
     const voicedIn = frames.filter(f=>f.cents!=null).length;
@@ -853,8 +853,8 @@ $('takeBtn').onclick = async ()=>{
     makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd - state.clipStart);
     state.userFrames = frames;
     state.takeUploaded = false;
-    state.alignOffsetApplied = off;
-    state.userAudioMapsToFileTime = off; // ← was 0, now off
+    state.alignOffsetApplied = Alignoff;
+    state.userAudioMapsToFileTime = Alignoff; // ← was 0, now off
 
     markDone(3, 'recorded');
     openStep(4);
