@@ -826,7 +826,7 @@ $('takeBtn').onclick = async ()=>{
     getCtx();
     await getMic();
     const monitor = $('monitorTgl').checked;
-    const frames = await captureContour({muteSource:!monitor, liveCanvas:$('takeLive'),
+    const rawframes = await captureContour({muteSource:!monitor, liveCanvas:$('takeLive'),
       meterEl:$('takeMeter'), statEl:$('takeStat'), timeEl:$('takeTime')});
     $('takeStat').textContent='';
     const voiced = frames.filter(f=>f.cents!=null).length;
@@ -834,9 +834,28 @@ $('takeBtn').onclick = async ()=>{
       setMsg('s3msg','Barely heard you — sing louder or move closer to the mic.','err');
       $('takeBtn').disabled = false; return;
     }
+    /*state.userFrames = frames;
+    state.takeUploaded = false;
+    state.userAudioMapsToFileTime = 0; // live buffer already on clip 
+    */
+
+    const off = alignOffset(state.refFrames, rawFrames);
+    const frames = rawFrames
+      .map(f => ({ ...f, t: +(f.t + off).toFixed(3) }))
+      .filter(f => f.t >= -0.5 && f.t <= (state.clipEnd - state.clipStart) + 0.5);
+
+    const voicedIn = frames.filter(f=>f.cents!=null).length;
+    if (voicedIn < 10){
+      setMsg('s3msg','Couldn\u2019t align your take — did you sing the right passage?','err');
+      $('takeBtn').disabled = false; return;
+    }
+
+    makeLiveDrawer($('takeLive'))(frames, '#9aa7bb', state.clipEnd - state.clipStart);
     state.userFrames = frames;
     state.takeUploaded = false;
-    state.userAudioMapsToFileTime = 0; // live buffer already on clip clock
+    state.alignOffsetApplied = off;
+    state.userAudioMapsToFileTime = off; // ← was 0, now off
+
     markDone(3, 'recorded');
     openStep(4);
     renderResults();
